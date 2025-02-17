@@ -43,10 +43,10 @@ variables:
     {{ desired_formulaic_humidity }}
     {% endif %}
   change_humidity: "{{ current_humidity_setting != desired_humidity }}"
-  notify_title: "Frost Control: Humidity changed to {{desired_humidity}}."
-  notify_message: "Outdoor temperature {{current_humidity_setting}}, prior humidity {{ current_humidity_setting }}."
-  pnotify_title: "Frost Control: Desired humidity is {{desired_humidity}}. Updated={{ change_humidity }}"
-  pnotify_message: "Outdoor temperature {{current_forecast_temperature}}, prior humidity {{ current_humidity_setting }}."
+  notify_title: "Frost Control: Updated humidifier setting to {{desired_humidity}}%."
+  notify_message: "Outdoor temperature {{current_forecast_temperature}}°. Prior setting {{ current_humidity_setting }}%."
+  pnotify_title: "Frost Control: Updated humidity to {{desired_humidity}}%."
+  pnotify_message: "Outdoor temperature {{current_forecast_temperature}}°. Prior setting {{ current_humidity_setting }}%."
 
 triggers:
   trigger: state
@@ -58,26 +58,25 @@ actions:
       entity_id: !input climate_control
       state: heat
     then:
-    - sequence:
-      - alias: "Send Persistent notification"
-        action: notify.persistent_notification
-        data:
-          title: "{{ pnotify_title }}"
-          message: "{{ pnotify_message }}"
-      - if:
-        - condition: template
-          value_template: change_humidity
-        then:
-        - sequence:
-          - alias: "Send notification"
-            domain: mobile_app
-            type: notify
-            device_id: !input notify_device
-            title: "{{ notify_title }}"
-            message: "{{ notify_message }}"
-          - alias: "Adjust humidity"
-            action: climate.set_humidity
-            target:
-              entity_id: !input climate_control
-            data:
-              humidity: '{{ desired_humidity }}'
+    - if:
+      - condition: template
+        value_template: "{{change_humidity}}"
+      then:
+      - sequence:
+        - alias: "Send Persistent notification"
+          action: notify.persistent_notification
+          data:
+            title: "{{ pnotify_title }}"
+            message: "{{ pnotify_message }}"
+        - alias: "Send notification"
+          domain: mobile_app
+          type: notify
+          device_id: !input notify_device
+          title: "{{ notify_title }}"
+          message: "{{ notify_message }}"
+        - alias: "Adjust humidity"
+          action: climate.set_humidity
+          target:
+            entity_id: !input climate_control
+          data:
+            humidity: '{{ desired_humidity }}'
