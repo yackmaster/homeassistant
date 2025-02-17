@@ -1,0 +1,83 @@
+# written by yack 2025/02/16
+blueprint:
+  name: Humidity Frost Control
+  description: Adjust furnace humidifier target based on outdoor temperature.
+  domain: automation
+  input:
+    forecast_sensor:
+      name: Weather Forecast
+      description: This is used to get the outdoor temperature in order to determine the safe indoor humidity level.
+      selector:
+        entity:
+          filter:
+            domain: weather
+    climate_control:
+      name: Climate Control
+      description: The climate control used to set the indoor humidity.
+      selector:
+        entity:
+          filter:
+            domain: climate
+    notify_device:
+      name: Device to notify
+      description: Device needs to run the official Home Assistant app to receive notifications.
+      selector:
+        device:
+          filter:
+            integration: mobile_app
+
+variables:
+  forecast_sensor: !input forecast_sensor
+  climate_control: !input climate_control
+  current_forecast_temperature: '{{ state_attr(forecast_sensor, ''temperature'') }}'
+  current_humidity_setting: '{{ state_attr(climate_control, ''humidity'') }}'
+  # Thresholds taken from https://www.aprilaire.com/benefits/preservation/relative-humidity-chart
+  desired_formulaic_humidity_base: '{{ (40 - ((25 - current_forecast_temperature) / 2)) }}'
+  desired_formulaic_humidity: '{{ desired_formulaic_humidity_base - (desired_formulaic_humidity_base % 5) }}'
+  desired_humidity: >
+    {% if current_forecast_temperature >= 40 %}
+    45
+    {% elif current_forecast_temperature <= -10 %} 
+    35
+    {% else %} 
+    {{ desired_formulaic_humidity }}
+    {% endif %}
+  change_humidity: "{{ current_humidity_setting != desired_humidity }}"
+  notify_title: "Frost Control: Humidity changed to {{desired_humidity}}."
+  notify_message: "Outdoor temperature {{current_humidity_setting}}, prior humidity {{ current_humidity_setting }}."
+  pnotify_title: "Frost Control: Desired humidity is {{desired_humidity}}. Updated={{ change_humidity }}"
+  pnotify_message: "Outdoor temperature {{current_forecast_temperature}}, prior humidity {{ current_humidity_setting }}."
+
+triggers:
+  trigger: state
+  entity_id: !input forecast_sensor
+
+actions:
+  - if:
+    - condition: state
+      entity_id: !input climate_control
+      state: heat
+    then:
+    - sequence:
+      - alias: "Send Persistent notification"
+        action: notify.persistent_notification
+        data:
+          title: "{{ pnotify_title }}"
+          message: "{{ pnotify_message }}"
+      - if:
+        - condition: template
+          value_template: change_humidity
+        then:
+        - sequence:
+          - alias: "Send notification"
+            domain: mobile_app
+            type: notify
+            device_id: !input notify_device
+            title: "{{ notify_title }}"
+            message: "{{ notify_message }}"
+          - alias: "Adjust humidity"
+            action: climate.set_humidity
+            target:
+              entity_id: !input climate_control
+            data:
+              humidity: '{{ desired_humidity }}'
